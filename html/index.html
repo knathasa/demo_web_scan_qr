@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสแกน QR Code</title>
+    <!-- โหลด Tailwind CSS สำหรับจัดการความสวยงาม -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- โหลดไลบรารี html5-qrcode -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        /* ปรับแต่งส่วนของกล้องเพิ่มเติมเล็กน้อย */
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 2px solid #e5e7eb;
+        }
+        #reader video {
+            object-fit: cover;
+            /* สำคัญสำหรับ iOS เพื่อให้วิดีโอเล่นในกรอบได้ */
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-800">
+
+    <div class="container mx-auto px-4 py-8 max-w-md">
+        <!-- ส่วนหัว -->
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-blue-600 mb-2">สแกน QR Code</h1>
+            <p class="text-sm text-gray-500">รองรับการใช้งานผ่านกล้องหลังของสมาร์ทโฟน</p>
+        </div>
+
+        <!-- กล่องแสดงข้อความแจ้งเตือน (Error/Info) -->
+        <div id="messageBox" class="hidden mb-4 p-3 rounded-lg text-sm text-center"></div>
+
+        <!-- พื้นที่สำหรับแสดงกล้อง -->
+        <div class="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <div id="reader"></div>
+            <!-- ข้อความก่อนเปิดกล้อง -->
+            <div id="placeholder" class="py-20 text-center text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <p>กดปุ่ม "เริ่มสแกน" เพื่อเปิดกล้อง</p>
+            </div>
+        </div>
+
+        <!-- ปุ่มควบคุม -->
+        <div class="flex gap-3 justify-center mb-6">
+            <button id="startBtn" onclick="startScanner()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg shadow transition duration-200 flex-1">
+                เริ่มสแกน
+            </button>
+            <button id="stopBtn" onclick="stopScanner()" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-6 rounded-lg shadow transition duration-200 flex-1 hidden">
+                หยุดทำงาน
+            </button>
+        </div>
+
+        <!-- กล่องแสดงผลลัพธ์ -->
+        <div id="resultCard" class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 hidden transition-all">
+            <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">ผลลัพธ์ที่ได้:</h2>
+            <div class="bg-gray-50 p-3 rounded border border-gray-200 mb-3">
+                <p id="resultText" class="text-gray-800 break-all font-medium"></p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="copyResult()" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 py-1.5 px-4 rounded transition w-full">
+                    คัดลอกข้อความ
+                </button>
+                <a id="resultLink" href="#" target="_blank" class="hidden text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 py-1.5 px-4 rounded transition w-full text-center">
+                    เปิดลิงก์
+                </a>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let html5QrCode;
+        let isScanning = false;
+
+        // ฟังก์ชันสำหรับแสดงข้อความแจ้งเตือน
+        function showMessage(msg, isError = false) {
+            const msgBox = document.getElementById('messageBox');
+            msgBox.textContent = msg;
+            msgBox.className = `mb-4 p-3 rounded-lg text-sm text-center ${isError ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`;
+            msgBox.classList.remove('hidden');
+            
+            setTimeout(() => {
+                msgBox.classList.add('hidden');
+            }, 7000);
+        }
+
+        window.onload = function() {
+            html5QrCode = new Html5Qrcode("reader");
+        };
+
+        function startScanner() {
+            if (isScanning) return;
+
+            document.getElementById('placeholder').style.display = 'none';
+            document.getElementById('startBtn').classList.add('hidden');
+            document.getElementById('stopBtn').classList.remove('hidden');
+            document.getElementById('resultCard').classList.add('hidden');
+
+            // นำ aspectRatio ออก เพื่อลดปัญหา OverconstrainedError ใน iOS Safari
+            const config = { 
+                fps: 10,
+                qrbox: { width: 250, height: 250 }
+            };
+
+            // ทริกเกอร์ขอสิทธิ์การเข้าถึงกล้องก่อน (สำคัญมากสำหรับ iOS Safari)
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length > 0) {
+                    
+                    // สเต็ปที่ 1: พยายามเรียกใช้กล้องหลังด้วยวิธีมาตรฐาน
+                    html5QrCode.start(
+                        { facingMode: "environment" },
+                        config,
+                        onScanSuccess,
+                        onScanFailure
+                    ).then(() => {
+                        isScanning = true;
+                    }).catch((err) => {
+                        console.log("Fallback: ไม่สามารถใช้ facingMode ได้ จะลองระบุ ID กล้องแทน", err);
+                        
+                        // สเต็ปที่ 2: หากวิธีแรกพัง (iOS บางรุ่น) ให้ระบุ ID กล้องตัวสุดท้าย (ซึ่งมักจะเป็นกล้องหลัง)
+                        const backCameraId = devices[devices.length - 1].id;
+                        
+                        html5QrCode.start(
+                            backCameraId,
+                            config,
+                            onScanSuccess,
+                            onScanFailure
+                        ).then(() => {
+                            isScanning = true;
+                        }).catch((err2) => {
+                            console.error(err2);
+                            showMessage("เบราว์เซอร์ไม่สามารถเปิดกล้องได้ โปรดตรวจสอบว่าเว็บเปิดผ่าน HTTPS หรือรีเฟรชหน้าเว็บอีกครั้ง", true);
+                            resetUI();
+                        });
+                    });
+                } else {
+                    showMessage("ไม่พบอุปกรณ์กล้องบนเครื่องนี้", true);
+                    resetUI();
+                }
+            }).catch(err => {
+                console.error(err);
+                showMessage("คุณยังไม่อนุญาตให้เข้าถึงกล้อง (กรุณาไปที่ การตั้งค่า > Safari > กล้อง และเลือก 'อนุญาต')", true);
+                resetUI();
+            });
+        }
+
+        function stopScanner() {
+            if (!isScanning) return;
+
+            html5QrCode.stop().then(() => {
+                isScanning = false;
+                resetUI();
+            }).catch((err) => {
+                console.error("Failed to stop scanner.", err);
+            });
+        }
+
+        function resetUI() {
+            document.getElementById('placeholder').style.display = 'block';
+            document.getElementById('startBtn').classList.remove('hidden');
+            document.getElementById('stopBtn').classList.add('hidden');
+            html5QrCode.clear();
+            isScanning = false;
+        }
+
+        // เมื่อสแกนสำเร็จ
+        function onScanSuccess(decodedText, decodedResult) {
+            stopScanner();
+            
+            const resultCard = document.getElementById('resultCard');
+            const resultText = document.getElementById('resultText');
+            const resultLink = document.getElementById('resultLink');
+
+            resultText.textContent = decodedText;
+            resultCard.classList.remove('hidden');
+
+            if (decodedText.startsWith('http://') || decodedText.startsWith('https://')) {
+                resultLink.href = decodedText;
+                resultLink.classList.remove('hidden');
+                resultLink.classList.add('block');
+            } else {
+                resultLink.classList.add('hidden');
+            }
+
+            if ("vibrate" in navigator) {
+                navigator.vibrate(200);
+            }
+        }
+
+        // ฟังก์ชันทำงานอยู่ตลอดเวลาที่กล้องเปิดแต่ยังไม่เจอ QR
+        function onScanFailure(error) {
+            // ปล่อยว่างไว้เพื่อไม่ให้ console รก
+        }
+
+        function copyResult() {
+            const textToCopy = document.getElementById('resultText').textContent;
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showMessage("คัดลอกข้อความสำเร็จแล้ว!");
+            } catch (err) {
+                showMessage("ไม่สามารถคัดลอกได้", true);
+            }
+            document.body.removeChild(textArea);
+        }
+    </script>
+</body>
+</html>

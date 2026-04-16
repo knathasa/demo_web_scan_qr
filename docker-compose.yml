@@ -1,0 +1,18 @@
+services:
+  webserver:
+    # เลือกใช้ image nginx เวอร์ชั่น alpine เพราะมีขนาดเล็กและเบา
+    image: nginx:alpine
+    container_name: nginx-webserver
+    ports:
+      # แมพพอร์ต 8080 ของเครื่องโฮสต์ เข้ากับพอร์ต 80
+      - "8080:80"
+      # เพิ่มการแมพพอร์ต 8443 ของเครื่องโฮสต์ เข้ากับพอร์ต 443 (HTTPS) ของ Nginx
+      - "8443:443"
+    volumes:
+      # นำโฟลเดอร์ html ไปเชื่อมกับโฟลเดอร์เว็บของ Nginx แบบอ่านอย่างเดียว (ro)
+      - ./html:/usr/share/nginx/html:ro
+      # นำไฟล์ config ของเราไปทับค่า default ของ Nginx
+      - ./conf:/etc/nginx/conf.d:ro
+      # นำโฟลเดอร์ SSL Certificate เข้าไปใน Container
+      - ./certs:/etc/nginx/certs:ro
+    restart: unless-stopped
